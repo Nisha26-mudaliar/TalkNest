@@ -184,6 +184,20 @@ export const useChatStore = create(
         }
       },
 
+      // ================= REACT TO MESSAGE =================
+      reactToMessage: async (msgId, emoji) => {
+        try {
+          const res = await axiosInstance.post(`/messages/react/${msgId}`, { emoji });
+          set((state) => ({
+            messages: state.messages.map((m) =>
+              m._id === msgId ? { ...m, reactions: res.data.reactions } : m
+            ),
+          }));
+        } catch (error) {
+          toast.error("Failed to react");
+        }
+      },
+
       // ================= SOCKET =================
       subscribeToMessages: () => {
         const socket = useAuthStore.getState().socket;
@@ -198,7 +212,6 @@ export const useChatStore = create(
           if (isCurrentChat) {
             set({ messages: [...get().messages, newMessage] });
           } else {
-            // ✅ Increment unread count
             set({
               unreadCounts: {
                 ...unreadCounts,
@@ -206,7 +219,6 @@ export const useChatStore = create(
               },
             });
 
-            // ✅ Plain text toast — no JSX needed
             const sender = chats.find((c) => c._id === newMessage.senderId);
             const senderName = sender?.fullName || "Someone";
             const preview = newMessage.image
@@ -237,7 +249,6 @@ export const useChatStore = create(
           const { selectedGroup, isSoundEnabled, unreadCounts, groups } = get();
           const { authUser } = useAuthStore.getState();
 
-          // Don't notify for your own messages
           if (msg.senderId?.toString() === authUser._id?.toString()) return;
 
           const isCurrentGroup =
@@ -246,7 +257,6 @@ export const useChatStore = create(
           if (isCurrentGroup) {
             set({ messages: [...get().messages, msg] });
           } else {
-            // ✅ Increment unread count for group
             set({
               unreadCounts: {
                 ...unreadCounts,
@@ -254,7 +264,6 @@ export const useChatStore = create(
               },
             });
 
-            // ✅ Plain text toast for group
             const group = groups.find((g) => g._id === msg.groupId);
             const groupName = group?.name || "Group";
             const preview = msg.text || "📎 File";
@@ -280,6 +289,15 @@ export const useChatStore = create(
         socket.on("messageDeleted", ({ messageId }) => {
           set({ messages: get().messages.filter((m) => m._id !== messageId) });
         });
+
+        // ✅ REACTION from other user via socket
+        socket.on("messageReaction", ({ msgId, reactions }) => {
+          set((state) => ({
+            messages: state.messages.map((m) =>
+              m._id === msgId ? { ...m, reactions } : m
+            ),
+          }));
+        });
       },
 
       unsubscribeFromMessages: () => {
@@ -287,6 +305,7 @@ export const useChatStore = create(
         socket.off("newMessage");
         socket.off("receiveGroupMessage");
         socket.off("messageDeleted");
+        socket.off("messageReaction");
       },
     }),
     {

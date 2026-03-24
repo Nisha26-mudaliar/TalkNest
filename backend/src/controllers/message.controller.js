@@ -239,3 +239,47 @@ export const getGroupMessages = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+export const reactToMessage = async (req, res) => {
+  try {
+    const { msgId } = req.params;
+    const { emoji } = req.body;
+    const userId = req.user._id;
+
+    const message = await Message.findById(msgId);
+    if (!message) return res.status(404).json({ error: "Message not found" });
+
+    // Toggle: if user already reacted with same emoji, remove it
+    const existingIndex = message.reactions.findIndex(
+      (r) =>
+        r.userId.toString() === userId.toString() && r.emoji === emoji
+    );
+
+    if (existingIndex > -1) {
+      // Remove reaction (toggle off)
+      message.reactions.splice(existingIndex, 1);
+    } else {
+      // Add reaction
+      message.reactions.push({ userId, emoji });
+    }
+
+    await message.save();
+
+    // Emit to the other user via socket so their UI updates in real-time
+    const receiverId = message.receiverId?.toString();
+    if (receiverId) {
+      const receiverSocketId = getReceiverSocketId(receiverId);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit("messageReaction", {
+          msgId: message._id,
+          reactions: message.reactions,
+        });
+      }
+    }
+
+    res.json({ reactions: message.reactions });
+  } catch (error) {
+    console.error("Error in reactToMessage:", error);
+    res.status(500).json({ error: error.message });
+  }
+};

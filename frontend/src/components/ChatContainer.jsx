@@ -1,22 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
+import { useTheme } from "../context/ThemeContext";
 import ChatHeader from "./ChatHeader";
 import NoChatHistoryPlaceholder from "./NoChatHistoryPlaceholder";
 import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
+import MessageReactions from "./Messagereactions";
 import { format } from "date-fns";
 import { FileIcon, DownloadIcon, Trash2Icon, Check, CheckCheck } from "lucide-react";
 
-// ✅ Tick component
+// Animation keyframes injected once
+const MSG_ANIMATION = `
+  @keyframes msgSlideIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0)   scale(1);    }
+  }
+  .msg-animate {
+    animation: msgSlideIn 0.28s cubic-bezier(0.34, 1.1, 0.64, 1) both;
+  }
+`;
+
 function MessageStatus({ status, isMyMessage }) {
   if (!isMyMessage) return null;
-  if (status === "seen") {
-    return <CheckCheck className="w-3.5 h-3.5 text-cyan-300 inline ml-1" />;
-  }
-  if (status === "delivered") {
-    return <CheckCheck className="w-3.5 h-3.5 text-slate-400 inline ml-1" />;
-  }
+  if (status === "seen")      return <CheckCheck className="w-3.5 h-3.5 text-cyan-300 inline ml-1" />;
+  if (status === "delivered") return <CheckCheck className="w-3.5 h-3.5 text-slate-400 inline ml-1" />;
   return <Check className="w-3.5 h-3.5 text-slate-400 inline ml-1" />;
 }
 
@@ -32,15 +40,19 @@ function ChatContainer() {
     unsubscribeFromMessages,
     deleteMessage,
     deleteMessageForMe,
+    reactToMessage,
   } = useChatStore();
 
   const { authUser, socket } = useAuthStore();
+  const { accent } = useTheme();
 
   const messageEndRef = useRef(null);
   const [isTyping, setIsTyping] = useState(false);
   const [menuMsgId, setMenuMsgId] = useState(null);
+  // Track which messages are "new" (added after initial load) for animation
+  const [animatedIds, setAnimatedIds] = useState(new Set());
+  const prevCountRef = useRef(0);
 
-  // ✅ Pre-compute my ID as string once
   const myId = authUser?._id?.toString();
 
   useEffect(() => {
@@ -50,8 +62,23 @@ function ChatContainer() {
       socket?.emit("joinGroup", selectedGroup._id);
     }
     subscribeToMessages();
+    prevCountRef.current = 0;
+    setAnimatedIds(new Set());
     return () => unsubscribeFromMessages();
   }, [selectedUser, selectedGroup]);
+
+  // Animate only newly arriving messages, not the initial batch
+  useEffect(() => {
+    if (messages.length > prevCountRef.current && prevCountRef.current > 0) {
+      const newIds = messages.slice(prevCountRef.current).map(m => m._id);
+      setAnimatedIds(prev => {
+        const next = new Set(prev);
+        newIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+    prevCountRef.current = messages.length;
+  }, [messages]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -59,16 +86,9 @@ function ChatContainer() {
 
   useEffect(() => {
     if (!socket || !selectedUser) return;
-    socket.on("typing", ({ senderId }) => {
-      if (senderId === selectedUser._id) setIsTyping(true);
-    });
-    socket.on("stopTyping", ({ senderId }) => {
-      if (senderId === selectedUser._id) setIsTyping(false);
-    });
-    return () => {
-      socket.off("typing");
-      socket.off("stopTyping");
-    };
+    socket.on("typing",     ({ senderId }) => { if (senderId === selectedUser._id) setIsTyping(true);  });
+    socket.on("stopTyping", ({ senderId }) => { if (senderId === selectedUser._id) setIsTyping(false); });
+    return () => { socket.off("typing"); socket.off("stopTyping"); };
   }, [socket, selectedUser]);
 
   useEffect(() => {
@@ -78,24 +98,27 @@ function ChatContainer() {
   }, []);
 
   const getFileColor = (type) => {
-    if (type?.includes("pdf")) return "text-red-400";
+    if (type?.includes("pdf"))    return "text-red-400";
     if (type?.includes("word") || type?.includes("document")) return "text-blue-400";
-    if (type?.includes("sheet") || type?.includes("excel")) return "text-green-400";
+    if (type?.includes("sheet") || type?.includes("excel"))   return "text-green-400";
     return "text-slate-300";
   };
 
   const getFileLabel = (type) => {
-    if (type?.includes("pdf")) return "PDF";
+    if (type?.includes("pdf"))          return "PDF";
     if (type?.includes("word") || type?.includes("document")) return "Word";
-    if (type?.includes("sheet") || type?.includes("excel")) return "Excel";
+    if (type?.includes("sheet") || type?.includes("excel"))   return "Excel";
     if (type?.includes("presentation") || type?.includes("powerpoint")) return "PowerPoint";
-    if (type?.includes("zip")) return "ZIP";
+    if (type?.includes("zip"))  return "ZIP";
     if (type?.includes("text")) return "Text";
     return "File";
   };
 
   return (
     <>
+      {/* Inject animation CSS once */}
+      <style>{MSG_ANIMATION}</style>
+
       <ChatHeader />
 
       <div className="flex-1 px-6 overflow-y-auto py-8">
@@ -106,30 +129,29 @@ function ChatContainer() {
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg) => {
-
-              // ✅ Always compare as strings — fixes the profile flash bug
               const senderId =
                 msg.senderId?._id?.toString() ||
                 msg.senderId?.toString() ||
                 "";
               const isMyMessage = myId && senderId && myId === senderId;
+              const shouldAnimate = animatedIds.has(msg._id);
 
               return (
                 <div
                   key={msg._id}
-                  className={`chat ${isMyMessage ? "chat-end" : "chat-start"}`}
+                  className={`chat ${isMyMessage ? "chat-end" : "chat-start"} ${shouldAnimate ? "msg-animate" : ""}`}
                 >
                   <div className="chat-bubble-wrapper relative group">
                     <div
                       className={`chat-bubble ${
                         isMyMessage
-                          ? "bg-cyan-600 text-white"
+                          ? `${accent.bg} text-white`
                           : "bg-slate-800 text-slate-200"
                       }`}
                     >
                       {/* Group sender name */}
                       {selectedGroup && msg.senderName && (
-                        <p className="text-xs text-cyan-300 mb-1">{msg.senderName}</p>
+                        <p className={`text-xs mb-1 ${accent.text}`}>{msg.senderName}</p>
                       )}
 
                       {/* Image */}
@@ -137,7 +159,7 @@ function ChatContainer() {
                         <img
                           src={msg.image}
                           alt="sent image"
-                          className="max-w-xs rounded-lg mb-1 cursor-pointer"
+                          className="max-w-xs rounded-lg mb-1 cursor-pointer transition-transform hover:scale-[1.02]"
                           onClick={() => window.open(msg.image, "_blank")}
                         />
                       )}
@@ -163,7 +185,7 @@ function ChatContainer() {
                       {/* Text */}
                       {msg.text && <p>{msg.text}</p>}
 
-                      {/* Timestamp + tick */}
+                      {/* Timestamp + status */}
                       <div className="flex items-center justify-end gap-1 mt-1">
                         <p className="text-xs opacity-70">
                           {format(new Date(msg.createdAt), "hh:mm a")}
@@ -174,7 +196,15 @@ function ChatContainer() {
                       </div>
                     </div>
 
-                    {/* Delete button on hover */}
+                    {/* Reactions */}
+                    <MessageReactions
+                      msgId={msg._id}
+                      reactions={msg.reactions || []}
+                      isMyMessage={isMyMessage}
+                      onReact={(msgId, emoji) => reactToMessage(msgId, emoji)}
+                    />
+
+                    {/* Delete button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -196,20 +226,14 @@ function ChatContainer() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         <button
-                          onClick={() => {
-                            deleteMessageForMe(msg._id);
-                            setMenuMsgId(null);
-                          }}
+                          onClick={() => { deleteMessageForMe(msg._id); setMenuMsgId(null); }}
                           className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
                         >
                           🙈 Delete for me
                         </button>
                         {isMyMessage && (
                           <button
-                            onClick={() => {
-                              deleteMessage(msg._id);
-                              setMenuMsgId(null);
-                            }}
+                            onClick={() => { deleteMessage(msg._id); setMenuMsgId(null); }}
                             className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-slate-700 transition-colors border-t border-slate-700"
                           >
                             🗑️ Delete for everyone
@@ -222,11 +246,15 @@ function ChatContainer() {
               );
             })}
 
-            {/* Typing */}
+            {/* Typing indicator */}
             {isTyping && selectedUser && (
-              <p className="text-sm text-gray-400">
-                {selectedUser.fullName} is typing...
-              </p>
+              <div className="chat chat-start msg-animate">
+                <div className="chat-bubble bg-slate-800 text-slate-400 text-sm flex items-center gap-1">
+                  <span className="animate-bounce" style={{ animationDelay: "0ms" }}>●</span>
+                  <span className="animate-bounce" style={{ animationDelay: "150ms" }}>●</span>
+                  <span className="animate-bounce" style={{ animationDelay: "300ms" }}>●</span>
+                </div>
+              </div>
             )}
 
             <div ref={messageEndRef} />

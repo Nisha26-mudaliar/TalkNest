@@ -7,6 +7,7 @@ import {
   getGroupMessages,
   deleteMessage,
   deleteMessageForMe,
+  reactToMessage,
 } from "../controllers/message.controller.js";
 
 import { protectRoute } from "../middleware/auth.middleware.js";
@@ -29,5 +30,8 @@ router.delete("/:messageId", deleteMessage);
 
 // ✅ Delete for me only
 router.patch("/:messageId/delete-for-me", deleteMessageForMe);
+
+// ✅ React to a message
+router.post("/react/:msgId", reactToMessage);
 
 export default router;

@@ -3,10 +3,10 @@ import { useChatStore } from "../store/useChatStore";
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useVideoCallStore } from "../store/useVideoCallStore";
+import { useTheme } from "../context/ThemeContext";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 
-// ✅ Helper to safely get ID string from member object or string
 const getId = (member) => {
   if (!member) return null;
   if (typeof member === "string") return member;
@@ -25,6 +25,7 @@ function ChatHeader() {
 
   const { onlineUsers, authUser } = useAuthStore();
   const { startCall } = useVideoCallStore();
+  const { accent } = useTheme();
 
   const [showMembers, setShowMembers] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -74,7 +75,6 @@ function ChatHeader() {
     }
   }, [showAddMember]);
 
-  // ✅ Add member
   const handleAddMember = async () => {
     if (!selectedNewMember) return;
     setIsUpdating(true);
@@ -95,14 +95,12 @@ function ChatHeader() {
     }
   };
 
-  // ✅ Remove member — send correct string ID
   const handleRemoveMember = async (memberId, memberName) => {
     if (!window.confirm(`Remove ${memberName} from the group?`)) return;
     try {
-      console.log("Sending remove request for userId:", memberId);
       const res = await axiosInstance.post(
         `/groups/${selectedGroup._id}/remove-member`,
-        { userId: memberId } // ✅ already a clean string from getId()
+        { userId: memberId }
       );
       toast.success(`${memberName} removed`);
       setSelectedGroup(res.data);
@@ -112,7 +110,6 @@ function ChatHeader() {
     }
   };
 
-  // ✅ Leave group
   const handleLeaveGroup = async () => {
     if (!window.confirm("Are you sure you want to leave this group?")) return;
     try {
@@ -125,7 +122,6 @@ function ChatHeader() {
     }
   };
 
-  // ✅ Change group pic
   const handleAvatarChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -166,7 +162,7 @@ function ChatHeader() {
           {/* GROUP AVATAR */}
           {selectedGroup && (
             <div className="relative">
-              <div className="w-12 h-12 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg overflow-hidden ${accent.bg}`}>
                 {selectedGroup.avatar && selectedGroup.avatar !== "/group.png" ? (
                   <img src={selectedGroup.avatar} alt={selectedGroup.name} className="w-full h-full object-cover" />
                 ) : (
@@ -197,9 +193,7 @@ function ChatHeader() {
             )}
             {selectedGroup && members.length > 0 && (
               <p className="text-slate-400 text-xs truncate max-w-xs">
-                {members.map((m) =>
-                  getId(m) === myId ? "You" : m.fullName
-                ).join(", ")}
+                {members.map((m) => getId(m) === myId ? "You" : m.fullName).join(", ")}
               </p>
             )}
             {selectedGroup && members.length === 0 && (
@@ -213,10 +207,10 @@ function ChatHeader() {
           {selectedGroup && isAdmin && (
             <button
               onClick={(e) => { e.stopPropagation(); setShowAddMember(p => !p); setShowMembers(false); }}
-              className="w-9 h-9 rounded-full bg-cyan-600/20 hover:bg-cyan-600/40 flex items-center justify-center transition-colors"
+              className={`w-9 h-9 rounded-full ${accent.soft} ${accent.softHover} flex items-center justify-center transition-colors`}
               title="Add member"
             >
-              <UserPlus className="w-4 h-4 text-cyan-400" />
+              <UserPlus className={`w-4 h-4 ${accent.text}`} />
             </button>
           )}
 
@@ -227,7 +221,7 @@ function ChatHeader() {
               title="View members"
             >
               <Users className="w-4 h-4 text-purple-400" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-purple-600 rounded-full text-white text-[10px] flex items-center justify-center">
+              <span className={`absolute -top-1 -right-1 w-4 h-4 ${accent.bg} rounded-full text-white text-[10px] flex items-center justify-center`}>
                 {memberCount}
               </span>
             </button>
@@ -246,10 +240,10 @@ function ChatHeader() {
           {selectedUser && (
             <button
               onClick={() => startCall(selectedUser)}
-              className="w-9 h-9 rounded-full bg-cyan-600/20 hover:bg-cyan-600/40 flex items-center justify-center transition-colors"
+              className={`w-9 h-9 rounded-full ${accent.soft} ${accent.softHover} flex items-center justify-center transition-colors`}
               title="Start video call"
             >
-              <Video className="w-5 h-5 text-cyan-400" />
+              <Video className={`w-5 h-5 ${accent.text}`} />
             </button>
           )}
 
@@ -268,14 +262,12 @@ function ChatHeader() {
           <div className="px-4 py-2 border-b border-slate-700">
             <p className="text-slate-300 text-sm font-semibold">Members ({memberCount})</p>
           </div>
-
           <div className="max-h-60 overflow-y-auto">
             {members.map((member) => {
               const memberId = getId(member);
               const isMe = memberId === myId;
               const isMemberAdmin = memberId === adminId;
               const isMemberOnline = onlineUsers.includes(memberId);
-
               return (
                 <div
                   key={memberId}
@@ -291,17 +283,14 @@ function ChatHeader() {
                       <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-800" />
                     )}
                   </div>
-
                   <div className="flex-1 min-w-0">
                     <p className="text-slate-200 text-sm truncate">
                       {isMe ? "You" : member.fullName}
                     </p>
                     {isMemberAdmin && (
-                      <p className="text-purple-400 text-xs">Admin</p>
+                      <p className={`${accent.text} text-xs`}>Admin</p>
                     )}
                   </div>
-
-                  {/* ✅ Remove button — admin only, not for self or other admin */}
                   {isAdmin && !isMe && !isMemberAdmin && (
                     <button
                       onClick={() => handleRemoveMember(memberId, member.fullName)}
@@ -343,7 +332,7 @@ function ChatHeader() {
             <button
               onClick={handleAddMember}
               disabled={!selectedNewMember || isUpdating}
-              className="w-full bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-sm py-2 rounded-lg transition-colors"
+              className={`w-full ${accent.bg} ${accent.hover} disabled:opacity-50 text-white text-sm py-2 rounded-lg transition-colors`}
             >
               {isUpdating ? "Adding..." : "Add to Group"}
             </button>
