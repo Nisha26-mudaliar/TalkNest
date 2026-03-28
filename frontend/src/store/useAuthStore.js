@@ -11,6 +11,7 @@ export const useAuthStore = create(
   persist(
     (set, get) => ({
       authUser: null,
+      // ✅ FIX: always start as true — we must verify with server before rendering anything
       isCheckingAuth: true,
       isSigningUp: false,
       isLoggingIn: false,
@@ -19,35 +20,29 @@ export const useAuthStore = create(
 
       // CHECK AUTH
       checkAuth: async () => {
+        // ✅ FIX: explicitly set isCheckingAuth true at start of every check
+        set({ isCheckingAuth: true });
         try {
           const res = await axiosInstance.get("/auth/check");
-
           set({ authUser: res.data });
-
           get().connectSocket();
         } catch (error) {
           console.log("Error in authCheck:", error);
           set({ authUser: null });
         } finally {
+          // ✅ Only set false AFTER server responds — this is the gate
           set({ isCheckingAuth: false });
         }
       },
 
-      // SIGNUP ✅ now redirects to /verify-email with email saved
+      // SIGNUP
       signup: async (data) => {
         set({ isSigningUp: true });
-
         try {
           const res = await axiosInstance.post("/auth/signup", data);
-
           toast.success(res.data.message);
-
-          // ✅ Save email so VerifyEmailPage can read it
           sessionStorage.setItem("verifyEmail", data.email);
-
-          // ✅ Go to OTP verify page instead of login
           window.location.href = "/verify-email";
-
         } catch (error) {
           toast.error(error.response?.data?.message || "Signup failed");
         } finally {
@@ -58,14 +53,10 @@ export const useAuthStore = create(
       // LOGIN
       login: async (data) => {
         set({ isLoggingIn: true });
-
         try {
           const res = await axiosInstance.post("/auth/login", data);
-
           set({ authUser: res.data });
-
           toast.success("Logged in successfully");
-
           get().connectSocket();
         } catch (error) {
           toast.error(error.response?.data?.message || "Login failed");
@@ -78,11 +69,8 @@ export const useAuthStore = create(
       logout: async () => {
         try {
           await axiosInstance.post("/auth/logout");
-
           set({ authUser: null });
-
           toast.success("Logged out successfully");
-
           get().disconnectSocket();
         } catch (error) {
           toast.error("Error logging out");
@@ -94,9 +82,7 @@ export const useAuthStore = create(
       updateProfile: async (data) => {
         try {
           const res = await axiosInstance.put("/auth/update-profile", data);
-
           set({ authUser: res.data });
-
           toast.success("Profile updated successfully");
         } catch (error) {
           console.log("Error in update profile:", error);
@@ -107,17 +93,12 @@ export const useAuthStore = create(
       // SOCKET CONNECT
       connectSocket: () => {
         const { authUser } = get();
-
         if (!authUser || get().socket?.connected) return;
-
         const socket = io(BASE_URL, {
           withCredentials: true,
         });
-
         socket.connect();
-
         set({ socket });
-
         socket.on("getOnlineUsers", (userIds) => {
           set({ onlineUsers: userIds });
         });
@@ -130,8 +111,15 @@ export const useAuthStore = create(
     }),
     {
       name: "auth-storage",
+      // ✅ Only persist authUser — never persist isCheckingAuth
       partialize: (state) => ({ authUser: state.authUser }),
-      // only persist authUser
+      // ✅ FIX: when store rehydrates from localStorage, force isCheckingAuth
+      // back to true so we always wait for server verification
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.isCheckingAuth = true;
+        }
+      },
     }
   )
 );

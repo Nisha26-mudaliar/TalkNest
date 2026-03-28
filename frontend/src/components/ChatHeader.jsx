@@ -3,6 +3,7 @@ import { useChatStore } from "../store/useChatStore";
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useVideoCallStore } from "../store/useVideoCallStore";
+import { useGroupCallStore } from "../store/useGroupCallStore";
 import { useTheme } from "../context/ThemeContext";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
@@ -25,6 +26,7 @@ function ChatHeader() {
 
   const { onlineUsers, authUser } = useAuthStore();
   const { startCall } = useVideoCallStore();
+  const { startGroupCall } = useGroupCallStore(); // ✅ group call
   const { accent } = useTheme();
 
   const [showMembers, setShowMembers] = useState(false);
@@ -237,6 +239,18 @@ function ChatHeader() {
             </button>
           )}
 
+          {/* ✅ GROUP VIDEO CALL BUTTON */}
+          {selectedGroup && (
+            <button
+              onClick={(e) => { e.stopPropagation(); startGroupCall(selectedGroup); }}
+              className={`w-9 h-9 rounded-full ${accent.soft} ${accent.softHover} flex items-center justify-center transition-colors`}
+              title="Start group video call"
+            >
+              <Video className={`w-5 h-5 ${accent.text}`} />
+            </button>
+          )}
+
+          {/* 1-on-1 VIDEO CALL BUTTON (unchanged) */}
           {selectedUser && (
             <button
               onClick={() => startCall(selectedUser)}

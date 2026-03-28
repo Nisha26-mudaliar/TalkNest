@@ -229,14 +229,14 @@ function ChatContainer() {
                           onClick={() => { deleteMessageForMe(msg._id); setMenuMsgId(null); }}
                           className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
                         >
-                          🙈 Delete for me
+                           Delete for me
                         </button>
                         {isMyMessage && (
                           <button
                             onClick={() => { deleteMessage(msg._id); setMenuMsgId(null); }}
                             className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-slate-700 transition-colors border-t border-slate-700"
                           >
-                            🗑️ Delete for everyone
+                             Delete for everyone
                           </button>
                         )}
                       </div>

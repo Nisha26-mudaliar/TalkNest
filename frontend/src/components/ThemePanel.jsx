@@ -62,7 +62,7 @@ function ThemePanel() {
         `}</style>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
+       {/* <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
           <h2 className="text-slate-200 font-semibold text-base">Appearance</h2>
           <button
             onClick={onClose}
@@ -70,7 +70,7 @@ function ThemePanel() {
           >
             <XIcon className="w-5 h-5" />
           </button>
-        </div>
+        </div> */}
 
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-7">
 

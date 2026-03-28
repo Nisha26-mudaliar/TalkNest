@@ -120,13 +120,13 @@ function ProfileHeader() {
           {/* Action buttons */}
           <div className="flex items-center gap-2">
             {/* Theme */}
-            <button
+           {/* <button
               onClick={() => setShowThemePanel(true)}
               className="text-slate-400 hover:text-slate-200 transition-colors"
               title="Appearance"
             >
               <PaletteIcon className="size-4" />
-            </button>
+            </button> */}
 
             {/* Sound */}
             <button

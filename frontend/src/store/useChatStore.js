@@ -9,6 +9,7 @@ export const useChatStore = create(
     (set, get) => ({
       hasHydrated: false,
       allContacts: [],
+      // ✅ FIX: always start empty — never rehydrate chats/groups from storage
       chats: [],
       groups: [],
       messages: [],
@@ -19,7 +20,6 @@ export const useChatStore = create(
       isMessagesLoading: false,
       isSoundEnabled: true,
 
-      // ✅ Unread counts: { userId: count, groupId: count }
       unreadCounts: {},
 
       toggleSound: () => {
@@ -128,6 +128,9 @@ export const useChatStore = create(
           senderId: authUser._id,
           text: messageData.text,
           image: messageData.image,
+          file: messageData.file,
+          fileName: messageData.fileName,
+          fileType: messageData.fileType,
           createdAt: new Date().toISOString(),
           isOptimistic: true,
         };
@@ -151,6 +154,9 @@ export const useChatStore = create(
             socket.emit("sendGroupMessage", {
               groupId: selectedGroup._id,
               text: messageData.text,
+              file: messageData.file,
+              fileName: messageData.fileName,
+              fileType: messageData.fileType,
             });
             set({
               messages: get().messages.filter((m) => m._id !== tempId),
@@ -202,10 +208,8 @@ export const useChatStore = create(
       subscribeToMessages: () => {
         const socket = useAuthStore.getState().socket;
 
-        // ⭐ USER MESSAGE
         socket.on("newMessage", (newMessage) => {
           const { selectedUser, isSoundEnabled, unreadCounts, chats } = get();
-
           const isCurrentChat =
             selectedUser && newMessage.senderId === selectedUser._id;
 
@@ -244,7 +248,6 @@ export const useChatStore = create(
           }
         });
 
-        // ⭐ GROUP MESSAGE
         socket.on("receiveGroupMessage", (msg) => {
           const { selectedGroup, isSoundEnabled, unreadCounts, groups } = get();
           const { authUser } = useAuthStore.getState();
@@ -266,7 +269,9 @@ export const useChatStore = create(
 
             const group = groups.find((g) => g._id === msg.groupId);
             const groupName = group?.name || "Group";
-            const preview = msg.text || "📎 File";
+            const preview = msg.file
+              ? `📎 ${msg.fileName || "File"}`
+              : msg.text || "New message";
 
             toast(`👥 ${groupName} — ${msg.senderName || "Someone"}: ${preview}`, {
               duration: 4000,
@@ -285,12 +290,10 @@ export const useChatStore = create(
           }
         });
 
-        // ✅ DELETE FOR EVERYONE
         socket.on("messageDeleted", ({ messageId }) => {
           set({ messages: get().messages.filter((m) => m._id !== messageId) });
         });
 
-        // ✅ REACTION from other user via socket
         socket.on("messageReaction", ({ msgId, reactions }) => {
           set((state) => ({
             messages: state.messages.map((m) =>
@@ -310,13 +313,23 @@ export const useChatStore = create(
     }),
     {
       name: "chat-store",
+      // ✅ FIX: never persist chats/groups/messages — always fetch fresh from server
       partialize: (state) => ({
         activeTab: state.activeTab,
         isSoundEnabled: state.isSoundEnabled,
         unreadCounts: state.unreadCounts,
+        // chats, groups, messages intentionally excluded
       }),
       onRehydrateStorage: () => (state) => {
-        if (state) state.hasHydrated = true;
+        if (state) {
+          // ✅ FIX: always reset these to empty on page load
+          state.hasHydrated = true;
+          state.chats = [];
+          state.groups = [];
+          state.messages = [];
+          state.allContacts = [];
+          state.isUsersLoading = false;
+        }
       },
     }
   )

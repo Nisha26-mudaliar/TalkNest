@@ -45,7 +45,7 @@ export const getMessagesByUserId = async (req, res) => {
   }
 };
 
-// ⭐ Send message
+// ⭐ Send message (DM)
 export const sendMessage = async (req, res) => {
   try {
     const { text, image, file, fileName, fileType } = req.body;
@@ -175,7 +175,7 @@ export const deleteMessageForMe = async (req, res) => {
   }
 };
 
-// ⭐ Get chat partners
+// ⭐ Get chat partners — FIXED: null checks for deleted users
 export const getChatPartners = async (req, res) => {
   try {
     const userId = req.user._id;
@@ -188,8 +188,13 @@ export const getChatPartners = async (req, res) => {
 
     const users = [];
     messages.forEach((msg) => {
-      if (msg.senderId._id.toString() !== userId.toString()) users.push(msg.senderId);
-      if (msg.receiverId?._id?.toString() !== userId.toString()) users.push(msg.receiverId);
+      // ✅ FIX: null check before accessing ._id (handles deleted users)
+      if (msg.senderId && msg.senderId._id.toString() !== userId.toString()) {
+        users.push(msg.senderId);
+      }
+      if (msg.receiverId && msg.receiverId._id.toString() !== userId.toString()) {
+        users.push(msg.receiverId);
+      }
     });
 
     const uniqueUsers = Array.from(
@@ -203,12 +208,33 @@ export const getChatPartners = async (req, res) => {
   }
 };
 
+// ⭐ Send group message via HTTP
 export const sendGroupMessage = async (req, res) => {
   try {
-    const { text } = req.body;
+    const { text, file, fileName, fileType } = req.body;
     const { groupId } = req.params;
     const senderId = req.user._id;
-    const newMessage = new Message({ senderId, groupId, text });
+
+    let fileUrl;
+
+    // ✅ Upload file to Cloudinary if present
+    if (file) {
+      const uploadResponse = await cloudinary.uploader.upload(file, {
+        resource_type: "raw",
+        public_id: `chat_files/${Date.now()}_${fileName}`,
+      });
+      fileUrl = uploadResponse.secure_url;
+    }
+
+    const newMessage = new Message({
+      senderId,
+      groupId,
+      text,
+      file: fileUrl,
+      fileName,
+      fileType,
+    });
+
     await newMessage.save();
     io.to(groupId).emit("newGroupMessage", newMessage);
     res.status(201).json(newMessage);
@@ -223,14 +249,13 @@ export const getGroupMessages = async (req, res) => {
     const { groupId } = req.params;
 
     const messages = await Message.find({ groupId })
-      .populate("senderId", "fullName profilePic"); // ✅ populate sender info
+      .populate("senderId", "fullName profilePic");
 
-    // ✅ Add senderName to each message so ChatContainer can display it
     const messagesWithName = messages.map((msg) => ({
       ...msg._doc,
       senderName: msg.senderId?.fullName,
       senderPic: msg.senderId?.profilePic,
-      senderId: msg.senderId?._id, // keep as ID string for comparison
+      senderId: msg.senderId?._id,
     }));
 
     res.status(200).json(messagesWithName);
@@ -256,16 +281,13 @@ export const reactToMessage = async (req, res) => {
     );
 
     if (existingIndex > -1) {
-      // Remove reaction (toggle off)
       message.reactions.splice(existingIndex, 1);
     } else {
-      // Add reaction
       message.reactions.push({ userId, emoji });
     }
 
     await message.save();
 
-    // Emit to the other user via socket so their UI updates in real-time
     const receiverId = message.receiverId?.toString();
     if (receiverId) {
       const receiverSocketId = getReceiverSocketId(receiverId);

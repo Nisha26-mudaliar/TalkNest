@@ -35,7 +35,9 @@ function ChatsList() {
     document.title = totalUnread > 0 ? `(${totalUnread}) TalkNest` : "TalkNest";
   }, [totalUnread]);
 
-  if (isUsersLoading || !authUser) return <UsersLoadingSkeleton />;
+  // ✅ ChatPage already blocks render until authUser is ready,
+  // so we only need to wait for the chats API call to finish
+  if (isUsersLoading) return <UsersLoadingSkeleton />;
 
   const safeChats = chats.filter((chat) => chat._id !== authUser._id);
 
