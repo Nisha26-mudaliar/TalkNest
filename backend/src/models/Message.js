@@ -26,7 +26,14 @@ const messageSchema = new mongoose.Schema(
       default: "sent",
     },
 
-    // ✅ Track who deleted this for themselves
+    // ✅ NEW: distinguish call messages from regular messages
+    messageType: {
+      type: String,
+      enum: ["text", "call"],
+      default: "text",
+    },
+
+    // Track who deleted this for themselves
     deletedFor: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -34,7 +41,7 @@ const messageSchema = new mongoose.Schema(
       },
     ],
 
-    // ✅ Emoji reactions
+    // Emoji reactions
     reactions: [
       {
         userId: {

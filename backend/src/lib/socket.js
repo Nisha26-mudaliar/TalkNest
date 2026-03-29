@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 import { ENV } from "./env.js";
 import { socketAuthMiddleware } from "../middleware/socket.auth.middleware.js";
 import Message from "../models/Message.js";
-import Group from "../models/Group.js"; // ✅ import Group model
+import Group from "../models/Group.js";
 import cloudinary from "./cloudinary.js";
 
 const app = express();
@@ -18,33 +18,41 @@ const io = new Server(server, {
   },
 });
 
-// store online users
 const userSocketMap = {};
 
-// ✅ Track active group calls: groupId → Set of userIds in the call
+// Track active group calls: groupId → Set of userIds in the call
 const groupCallParticipants = {};
 
-// auth middleware
+// ✅ Track call start times: "userId-userId" → startTime (for 1-on-1)
+const callStartTimes = {};
+
+// ✅ Track group call start times: groupId → startTime
+const groupCallStartTimes = {};
+
 io.use(socketAuthMiddleware);
 
-// get receiver socket
 export function getReceiverSocketId(userId) {
   return userSocketMap[userId];
+}
+
+// ✅ Helper: format seconds into "mm:ss" or "hh:mm:ss"
+function formatDuration(seconds) {
+  if (!seconds || seconds < 0) return "0:00";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 io.on("connection", async (socket) => {
   console.log("User connected:", socket.user.fullName);
 
   const userId = socket.user._id.toString();
-
-  // add user
   userSocketMap[userId] = socket.id;
-
-  // send online users
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-  // ✅ FIX: Auto-join all groups the user belongs to on connect
-  // This ensures they receive incomingGroupCall even if they haven't opened the group chat
+  // Auto-join all groups on connect
   try {
     const userGroups = await Group.find({ members: socket.user._id }).select("_id");
     userGroups.forEach((group) => {
@@ -71,13 +79,12 @@ io.on("connection", async (socket) => {
 
   // ================= GROUP CHAT =================
   socket.on("joinGroup", (groupId) => {
-    socket.join(groupId); // still keep this for explicit joins
+    socket.join(groupId);
   });
 
   socket.on("sendGroupMessage", async (data) => {
     try {
       let fileUrl;
-
       if (data.file) {
         const uploadResponse = await cloudinary.uploader.upload(data.file, {
           resource_type: "raw",
@@ -116,16 +123,15 @@ io.on("connection", async (socket) => {
   });
 
   // ================= GROUP VIDEO CALL =================
-
-  // Someone starts a group call — notify all members in the group room
   socket.on("startGroupCall", ({ groupId, groupName, startedByName }) => {
-    // Init participant set for this group call
     if (!groupCallParticipants[groupId]) {
       groupCallParticipants[groupId] = new Set();
     }
     groupCallParticipants[groupId].add(userId);
 
-    // ✅ Notify everyone else in the group room (now guaranteed since we auto-join on connect)
+    // ✅ Record start time
+    groupCallStartTimes[groupId] = Date.now();
+
     socket.to(groupId).emit("incomingGroupCall", {
       groupId,
       groupName,
@@ -134,18 +140,13 @@ io.on("connection", async (socket) => {
     });
   });
 
-  // Someone joins an ongoing group call
   socket.on("joinGroupCall", ({ groupId, joinerName }) => {
     if (!groupCallParticipants[groupId]) {
       groupCallParticipants[groupId] = new Set();
     }
-
     const existingParticipants = [...groupCallParticipants[groupId]];
-
-    // Add joiner to participants
     groupCallParticipants[groupId].add(userId);
 
-    // Tell all existing participants about the new joiner so they initiate offers
     existingParticipants.forEach((participantId) => {
       const participantSocketId = getReceiverSocketId(participantId);
       if (participantSocketId) {
@@ -157,7 +158,6 @@ io.on("connection", async (socket) => {
     });
   });
 
-  // WebRTC offer — direct peer-to-peer signaling
   socket.on("groupCallOffer", ({ to, offer, groupId }) => {
     const toSocketId = getReceiverSocketId(to);
     if (toSocketId) {
@@ -170,32 +170,22 @@ io.on("connection", async (socket) => {
     }
   });
 
-  // WebRTC answer
   socket.on("groupCallAnswer", ({ to, answer, groupId }) => {
     const toSocketId = getReceiverSocketId(to);
     if (toSocketId) {
-      io.to(toSocketId).emit("groupCallAnswer", {
-        from: userId,
-        answer,
-        groupId,
-      });
+      io.to(toSocketId).emit("groupCallAnswer", { from: userId, answer, groupId });
     }
   });
 
-  // ICE candidate exchange
   socket.on("groupCallIce", ({ to, candidate, groupId }) => {
     const toSocketId = getReceiverSocketId(to);
     if (toSocketId) {
-      io.to(toSocketId).emit("groupCallIce", {
-        from: userId,
-        candidate,
-        groupId,
-      });
+      io.to(toSocketId).emit("groupCallIce", { from: userId, candidate, groupId });
     }
   });
 
-  // Someone leaves the group call
-  socket.on("leaveGroupCall", ({ groupId }) => {
+  // ✅ Someone leaves the group call — save call message if last person leaving
+  socket.on("leaveGroupCall", async ({ groupId }) => {
     if (groupCallParticipants[groupId]) {
       groupCallParticipants[groupId].delete(userId);
 
@@ -207,15 +197,39 @@ io.on("connection", async (socket) => {
         }
       });
 
-      // Clean up if call is empty
+      // ✅ If last person left, save call ended message to DB
       if (groupCallParticipants[groupId].size === 0) {
         delete groupCallParticipants[groupId];
+
+        try {
+          const startTime = groupCallStartTimes[groupId];
+          const durationSecs = startTime
+            ? Math.floor((Date.now() - startTime) / 1000)
+            : 0;
+          delete groupCallStartTimes[groupId];
+
+          const callMessage = await Message.create({
+            groupId: new mongoose.Types.ObjectId(groupId),
+            senderId: userId,
+            text: ` Group video call ended • ${formatDuration(durationSecs)}`,
+            messageType: "call",
+          });
+
+          const msgToEmit = {
+            ...callMessage._doc,
+            senderName: socket.user.fullName,
+            senderPic: socket.user.profilePic,
+          };
+
+          io.to(groupId).emit("receiveGroupMessage", msgToEmit);
+        } catch (err) {
+          console.log("Error saving group call message:", err);
+        }
       }
     }
   });
 
-  // ================= 1-ON-1 VIDEO CALL SIGNALING =================
-
+  // ================= 1-ON-1 VIDEO CALL =================
   socket.on("callUser", ({ to, offer, callerName }) => {
     const receiverSocketId = getReceiverSocketId(to);
     if (receiverSocketId) {
@@ -231,6 +245,10 @@ io.on("connection", async (socket) => {
     const callerSocketId = getReceiverSocketId(to);
     if (callerSocketId) {
       io.to(callerSocketId).emit("callAnswered", { answer });
+
+      // ✅ Record call start time when answered
+      const key = [userId, to].sort().join("-");
+      callStartTimes[key] = Date.now();
     }
   });
 
@@ -241,10 +259,38 @@ io.on("connection", async (socket) => {
     }
   });
 
-  socket.on("endCall", ({ to }) => {
+  // ✅ End call — save call message to both users' chat
+  socket.on("endCall", async ({ to }) => {
     const targetSocketId = getReceiverSocketId(to);
     if (targetSocketId) {
       io.to(targetSocketId).emit("callEnded");
+    }
+
+    try {
+      const key = [userId, to].sort().join("-");
+      const startTime = callStartTimes[key];
+      const durationSecs = startTime
+        ? Math.floor((Date.now() - startTime) / 1000)
+        : 0;
+      delete callStartTimes[key];
+
+      const callMessage = await Message.create({
+        senderId: userId,
+        receiverId: to,
+        text: ` Video call ended • ${formatDuration(durationSecs)}`,
+        messageType: "call",
+      });
+
+      // ✅ Emit to both users so it appears in their chat immediately
+      const senderSocketId = getReceiverSocketId(userId);
+      if (senderSocketId) {
+        io.to(senderSocketId).emit("newMessage", callMessage);
+      }
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("newMessage", callMessage);
+      }
+    } catch (err) {
+      console.log("Error saving call message:", err);
     }
   });
 
@@ -261,19 +307,15 @@ io.on("connection", async (socket) => {
     delete userSocketMap[userId];
     io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-    // ✅ Clean up any group calls this user was in
     Object.entries(groupCallParticipants).forEach(([groupId, participants]) => {
       if (participants.has(userId)) {
         participants.delete(userId);
-
-        // Notify remaining participants
         participants.forEach((participantId) => {
           const socketId = getReceiverSocketId(participantId);
           if (socketId) {
             io.to(socketId).emit("groupCallParticipantLeft", { userId });
           }
         });
-
         if (participants.size === 0) {
           delete groupCallParticipants[groupId];
         }

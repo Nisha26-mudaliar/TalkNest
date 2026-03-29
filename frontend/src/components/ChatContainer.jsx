@@ -8,7 +8,7 @@ import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
 import MessageReactions from "./Messagereactions";
 import { format } from "date-fns";
-import { FileIcon, DownloadIcon, Trash2Icon, Check, CheckCheck } from "lucide-react";
+import { FileIcon, DownloadIcon, Trash2Icon, Check, CheckCheck, PhoneCall } from "lucide-react";
 
 // Animation keyframes injected once
 const MSG_ANIMATION = `
@@ -26,6 +26,21 @@ function MessageStatus({ status, isMyMessage }) {
   if (status === "seen")      return <CheckCheck className="w-3.5 h-3.5 text-cyan-300 inline ml-1" />;
   if (status === "delivered") return <CheckCheck className="w-3.5 h-3.5 text-slate-400 inline ml-1" />;
   return <Check className="w-3.5 h-3.5 text-slate-400 inline ml-1" />;
+}
+
+// ✅ NEW: Call message bubble — centered, pill-shaped, no delete/react options
+function CallMessageBubble({ msg }) {
+  return (
+    <div className="flex justify-center my-2">
+      <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/50 text-slate-300 text-xs px-4 py-2 rounded-full shadow">
+        <PhoneCall className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+        <span>{msg.text}</span>
+        <span className="text-slate-500 ml-1">
+          {format(new Date(msg.createdAt), "hh:mm a")}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function ChatContainer() {
@@ -49,7 +64,6 @@ function ChatContainer() {
   const messageEndRef = useRef(null);
   const [isTyping, setIsTyping] = useState(false);
   const [menuMsgId, setMenuMsgId] = useState(null);
-  // Track which messages are "new" (added after initial load) for animation
   const [animatedIds, setAnimatedIds] = useState(new Set());
   const prevCountRef = useRef(0);
 
@@ -67,7 +81,7 @@ function ChatContainer() {
     return () => unsubscribeFromMessages();
   }, [selectedUser, selectedGroup]);
 
-  // Animate only newly arriving messages, not the initial batch
+  // Animate only newly arriving messages
   useEffect(() => {
     if (messages.length > prevCountRef.current && prevCountRef.current > 0) {
       const newIds = messages.slice(prevCountRef.current).map(m => m._id);
@@ -116,7 +130,6 @@ function ChatContainer() {
 
   return (
     <>
-      {/* Inject animation CSS once */}
       <style>{MSG_ANIMATION}</style>
 
       <ChatHeader />
@@ -135,6 +148,15 @@ function ChatContainer() {
                 "";
               const isMyMessage = myId && senderId && myId === senderId;
               const shouldAnimate = animatedIds.has(msg._id);
+
+              // ✅ Render call messages as centered pill — no bubbles, no delete
+              if (msg.messageType === "call") {
+                return (
+                  <div key={msg._id} className={shouldAnimate ? "msg-animate" : ""}>
+                    <CallMessageBubble msg={msg} />
+                  </div>
+                );
+              }
 
               return (
                 <div

@@ -13,6 +13,7 @@ function ChatsList() {
     chats,
     groups,
     isUsersLoading,
+    isChatsReady,
     setSelectedUser,
     setSelectedGroup,
     unreadCounts,
@@ -35,11 +36,11 @@ function ChatsList() {
     document.title = totalUnread > 0 ? `(${totalUnread}) TalkNest` : "TalkNest";
   }, [totalUnread]);
 
-  // ✅ ChatPage already blocks render until authUser is ready,
-  // so we only need to wait for the chats API call to finish
-  if (isUsersLoading) return <UsersLoadingSkeleton />;
+  if (isUsersLoading || !isChatsReady) return <UsersLoadingSkeleton />;
 
-  const safeChats = chats.filter((chat) => chat._id !== authUser._id);
+  const safeChats = chats.filter(
+    (chat) => chat._id.toString() !== authUser._id.toString()
+  );
 
   return (
     <>
@@ -54,9 +55,12 @@ function ChatsList() {
       {/* GROUPS */}
       {groups.length > 0 && (
         <>
-          <h3 className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2 mt-3 px-1">Groups</h3>
+          <h3 className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2 mt-3 px-1">
+            Groups
+          </h3>
           {groups.map((group) => {
-            const unread = unreadCounts?.[group._id] || 0;
+            // ✅ FIX: use toString() so key matches the string stored in unreadCounts
+            const unread = unreadCounts?.[group._id.toString()] || 0;
             return (
               <div
                 key={group._id}
@@ -65,15 +69,23 @@ function ChatsList() {
               >
                 <div className="flex items-center gap-3">
                   <div className="relative flex-shrink-0">
-                    <div className={`size-12 rounded-full overflow-hidden ${accent.bg} flex items-center justify-center text-white font-bold`}>
+                    <div
+                      className={`size-12 rounded-full overflow-hidden ${accent.bg} flex items-center justify-center text-white font-bold`}
+                    >
                       {group.avatar && group.avatar !== "/group.png" ? (
-                        <img src={group.avatar} alt={group.name} className="w-full h-full object-cover" />
+                        <img
+                          src={group.avatar}
+                          alt={group.name}
+                          className="w-full h-full object-cover"
+                        />
                       ) : (
                         group.name?.charAt(0)
                       )}
                     </div>
                     {unread > 0 && (
-                      <span className={`absolute -top-1 -right-1 w-5 h-5 ${accent.bg} rounded-full text-white text-xs flex items-center justify-center font-bold`}>
+                      <span
+                        className={`absolute -top-1 -right-1 w-5 h-5 ${accent.bg} rounded-full text-white text-xs flex items-center justify-center font-bold`}
+                      >
                         {unread > 9 ? "9+" : unread}
                       </span>
                     )}
@@ -81,7 +93,9 @@ function ChatsList() {
                   <div className="flex-1 min-w-0">
                     <h4 className="text-slate-200 font-medium truncate">{group.name}</h4>
                     {unread > 0 && (
-                      <p className={`text-xs ${accent.text}`}>{unread} new message{unread > 1 ? "s" : ""}</p>
+                      <p className={`text-xs ${accent.text}`}>
+                        {unread} new message{unread > 1 ? "s" : ""}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -94,10 +108,13 @@ function ChatsList() {
       {/* USERS */}
       {safeChats.length === 0 && <NoChatsFound />}
       {safeChats.length > 0 && (
-        <h3 className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2 mt-3 px-1">Direct Messages</h3>
+        <h3 className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2 mt-3 px-1">
+          Direct Messages
+        </h3>
       )}
       {safeChats.map((chat) => {
-        const unread = unreadCounts?.[chat._id] || 0;
+        // ✅ FIX: use toString() so key matches the string stored in unreadCounts
+        const unread = unreadCounts?.[chat._id.toString()] || 0;
         return (
           <div
             key={chat._id}
@@ -106,23 +123,38 @@ function ChatsList() {
           >
             <div className="flex items-center gap-3">
               <div className="relative flex-shrink-0">
-                <div className={`avatar ${onlineUsers.includes(chat._id) ? "online" : "offline"}`}>
+                <div
+                  className={`avatar ${
+                    onlineUsers.includes(chat._id) ? "online" : "offline"
+                  }`}
+                >
                   <div className="size-12 rounded-full">
-                    <img src={chat.profilePic || "/avatar.png"} alt={chat.fullName} />
+                    <img
+                      src={chat.profilePic || "/avatar.png"}
+                      alt={chat.fullName}
+                    />
                   </div>
                 </div>
                 {unread > 0 && (
-                  <span className={`absolute -top-1 -right-1 w-5 h-5 ${accent.bg} rounded-full text-white text-xs flex items-center justify-center font-bold z-10`}>
+                  <span
+                    className={`absolute -top-1 -right-1 w-5 h-5 ${accent.bg} rounded-full text-white text-xs flex items-center justify-center font-bold z-10`}
+                  >
                     {unread > 9 ? "9+" : unread}
                   </span>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className={`truncate font-medium ${unread > 0 ? "text-white" : "text-slate-200"}`}>
+                <h4
+                  className={`truncate font-medium ${
+                    unread > 0 ? "text-white" : "text-slate-200"
+                  }`}
+                >
                   {chat.fullName}
                 </h4>
                 {unread > 0 && (
-                  <p className={`text-xs ${accent.text}`}>{unread} new message{unread > 1 ? "s" : ""}</p>
+                  <p className={`text-xs ${accent.text}`}>
+                    {unread} new message{unread > 1 ? "s" : ""}
+                  </p>
                 )}
               </div>
             </div>
@@ -130,7 +162,9 @@ function ChatsList() {
         );
       })}
 
-      {showGroupModal && <CreateGroupModal onClose={() => setShowGroupModal(false)} />}
+      {showGroupModal && (
+        <CreateGroupModal onClose={() => setShowGroupModal(false)} />
+      )}
     </>
   );
 }

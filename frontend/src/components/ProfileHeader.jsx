@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { LogOutIcon, VolumeOffIcon, Volume2Icon, PaletteIcon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
+import { LogOutIcon, VolumeOffIcon, Volume2Icon, PencilIcon, CheckIcon, XIcon } from "lucide-react";
 import { useAuthStore } from "../store/useAuthStore";
 import { useChatStore } from "../store/useChatStore";
 import { useTheme } from "../context/ThemeContext";
@@ -8,10 +8,10 @@ import ThemePanel from "./ThemePanel";
 const mouseClickSound = new Audio("/sounds/mouse-click.mp3");
 
 const STATUSES = [
-  { label: "Online",     emoji: "🟢" },
-  { label: "Away",       emoji: "🌙" },
-  { label: "Busy",       emoji: "⛔" },
-  { label: "Invisible",  emoji: "👻" },
+  { label: "Online",    emoji: "🟢" },
+  { label: "Away",      emoji: "🌙" },
+  { label: "Busy",      emoji: "⛔" },
+  { label: "Invisible", emoji: "👻" },
 ];
 
 function ProfileHeader() {
@@ -24,8 +24,13 @@ function ProfileHeader() {
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [currentStatus, setCurrentStatus] = useState(STATUSES[0]);
   const [editingBio, setEditingBio] = useState(false);
-  const [bio, setBio] = useState(authUser?.bio || "Hey there! I'm using TalkNest ✨");
+
+  // ✅ FIX: initialize bio from authUser.bio (from DB), fallback to default
+  const [bio, setBio] = useState(
+    authUser?.bio || "Hey there! I'm using TalkNest ✨"
+  );
   const [bioInput, setBioInput] = useState(bio);
+  const [isSavingBio, setIsSavingBio] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -43,10 +48,20 @@ function ProfileHeader() {
     };
   };
 
-  const handleSaveBio = () => {
-    setBio(bioInput.trim() || bio);
-    setEditingBio(false);
-    // Optionally: updateProfile({ bio: bioInput.trim() });
+  // ✅ FIX: actually save bio to DB via updateProfile
+  const handleSaveBio = async () => {
+    const trimmed = bioInput.trim();
+    if (!trimmed) return;
+    setIsSavingBio(true);
+    try {
+      await updateProfile({ bio: trimmed });
+      setBio(trimmed); // update local display
+    } catch (err) {
+      console.error("Failed to save bio:", err);
+    } finally {
+      setIsSavingBio(false);
+      setEditingBio(false);
+    }
   };
 
   const handleCancelBio = () => {
@@ -82,7 +97,13 @@ function ProfileHeader() {
                   <span className="text-white text-[10px] font-medium">Change</span>
                 </div>
               </button>
-              <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageUpload} className="hidden" />
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleImageUpload}
+                className="hidden"
+              />
             </div>
 
             {/* Name + Status */}
@@ -90,7 +111,6 @@ function ProfileHeader() {
               <h3 className="text-slate-200 font-semibold text-sm max-w-[140px] truncate">
                 {authUser.fullName}
               </h3>
-              {/* Status picker */}
               <div className="relative">
                 <button
                   onClick={() => setShowStatusMenu(p => !p)}
@@ -119,16 +139,6 @@ function ProfileHeader() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2">
-            {/* Theme */}
-           {/* <button
-              onClick={() => setShowThemePanel(true)}
-              className="text-slate-400 hover:text-slate-200 transition-colors"
-              title="Appearance"
-            >
-              <PaletteIcon className="size-4" />
-            </button> */}
-
-            {/* Sound */}
             <button
               className="text-slate-400 hover:text-slate-200 transition-colors"
               onClick={() => {
@@ -138,10 +148,11 @@ function ProfileHeader() {
               }}
               title={isSoundEnabled ? "Mute sounds" : "Enable sounds"}
             >
-              {isSoundEnabled ? <Volume2Icon className="size-4" /> : <VolumeOffIcon className="size-4" />}
+              {isSoundEnabled
+                ? <Volume2Icon className="size-4" />
+                : <VolumeOffIcon className="size-4" />}
             </button>
 
-            {/* Logout */}
             <button
               className="text-slate-400 hover:text-slate-200 transition-colors"
               onClick={logout}
@@ -159,16 +170,28 @@ function ProfileHeader() {
               <input
                 value={bioInput}
                 onChange={(e) => setBioInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveBio(); if (e.key === "Escape") handleCancelBio(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveBio();
+                  if (e.key === "Escape") handleCancelBio();
+                }}
                 className="flex-1 text-xs bg-slate-800 text-slate-200 px-2 py-1.5 rounded-lg outline-none border border-slate-600 focus:border-slate-500"
                 placeholder="Write a bio..."
                 autoFocus
                 maxLength={80}
+                disabled={isSavingBio}
               />
-              <button onClick={handleSaveBio} className={`${accent.text} hover:opacity-80 transition-opacity`}>
+              <button
+                onClick={handleSaveBio}
+                disabled={isSavingBio}
+                className={`${accent.text} hover:opacity-80 transition-opacity`}
+              >
                 <CheckIcon className="w-4 h-4" />
               </button>
-              <button onClick={handleCancelBio} className="text-slate-500 hover:text-slate-300 transition-colors">
+              <button
+                onClick={handleCancelBio}
+                disabled={isSavingBio}
+                className="text-slate-500 hover:text-slate-300 transition-colors"
+              >
                 <XIcon className="w-4 h-4" />
               </button>
             </div>
@@ -187,7 +210,6 @@ function ProfileHeader() {
 
       </div>
 
-      {/* Theme Panel */}
       {showThemePanel && <ThemePanel onClose={() => setShowThemePanel(false)} />}
     </>
   );

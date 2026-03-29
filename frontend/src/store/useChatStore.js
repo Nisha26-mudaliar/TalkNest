@@ -9,7 +9,6 @@ export const useChatStore = create(
     (set, get) => ({
       hasHydrated: false,
       allContacts: [],
-      // ✅ FIX: always start empty — never rehydrate chats/groups from storage
       chats: [],
       groups: [],
       messages: [],
@@ -19,6 +18,7 @@ export const useChatStore = create(
       isUsersLoading: false,
       isMessagesLoading: false,
       isSoundEnabled: true,
+      isChatsReady: false,
 
       unreadCounts: {},
 
@@ -30,26 +30,26 @@ export const useChatStore = create(
 
       setSelectedUser: (user) => {
         const unreadCounts = { ...get().unreadCounts };
-        delete unreadCounts[user._id];
-        set((state) => ({
-          ...state,
+        // ✅ FIX: always use toString() so key matches what newMessage.senderId produces
+        delete unreadCounts[user._id.toString()];
+        set({
           selectedUser: { ...user },
           selectedGroup: null,
           messages: [],
           unreadCounts,
-        }));
+        });
       },
 
       setSelectedGroup: (group) => {
         const unreadCounts = { ...get().unreadCounts };
-        delete unreadCounts[group._id];
-        set((state) => ({
-          ...state,
+        // ✅ FIX: always use toString()
+        delete unreadCounts[group._id.toString()];
+        set({
           selectedGroup: { ...group },
           selectedUser: null,
           messages: [],
           unreadCounts,
-        }));
+        });
       },
 
       // ================= CONTACTS =================
@@ -69,15 +69,17 @@ export const useChatStore = create(
       getMyChatPartners: async () => {
         const { authUser } = useAuthStore.getState();
         if (!authUser) return;
-        set({ isUsersLoading: true, chats: [] });
+        set({ isUsersLoading: true, chats: [], isChatsReady: false });
         try {
           const res = await axiosInstance.get("/messages/chats");
-          const filteredChats = res.data.filter((user) => user._id !== authUser._id);
+          const filteredChats = res.data.filter(
+            (user) => user._id.toString() !== authUser._id.toString()
+          );
           set({ chats: filteredChats });
         } catch (error) {
           console.log("Error fetching chats:", error);
         } finally {
-          set({ isUsersLoading: false });
+          set({ isUsersLoading: false, isChatsReady: true });
         }
       },
 
@@ -210,20 +212,27 @@ export const useChatStore = create(
 
         socket.on("newMessage", (newMessage) => {
           const { selectedUser, isSoundEnabled, unreadCounts, chats } = get();
-          const isCurrentChat =
-            selectedUser && newMessage.senderId === selectedUser._id;
+
+          // ✅ FIX: normalize both sides to string before comparing
+          const senderId = newMessage.senderId?.toString();
+          const selectedUserId = selectedUser?._id?.toString();
+          const isCurrentChat = selectedUser && senderId === selectedUserId;
 
           if (isCurrentChat) {
             set({ messages: [...get().messages, newMessage] });
           } else {
+            // ✅ FIX: use normalized senderId string as key
             set({
               unreadCounts: {
                 ...unreadCounts,
-                [newMessage.senderId]: (unreadCounts[newMessage.senderId] || 0) + 1,
+                [senderId]: (unreadCounts[senderId] || 0) + 1,
               },
             });
 
-            const sender = chats.find((c) => c._id === newMessage.senderId);
+            // skip toast for call messages
+            if (newMessage.messageType === "call") return;
+
+            const sender = chats.find((c) => c._id.toString() === senderId);
             const senderName = sender?.fullName || "Someone";
             const preview = newMessage.image
               ? "📷 Photo"
@@ -252,22 +261,31 @@ export const useChatStore = create(
           const { selectedGroup, isSoundEnabled, unreadCounts, groups } = get();
           const { authUser } = useAuthStore.getState();
 
-          if (msg.senderId?.toString() === authUser._id?.toString()) return;
+          // ✅ FIX: normalize to string
+          const senderId = msg.senderId?.toString();
+          const authUserId = authUser._id?.toString();
+          if (senderId === authUserId) return;
 
-          const isCurrentGroup =
-            selectedGroup && msg.groupId === selectedGroup._id;
+          // ✅ FIX: normalize groupId to string for comparison
+          const msgGroupId = msg.groupId?.toString();
+          const selectedGroupId = selectedGroup?._id?.toString();
+          const isCurrentGroup = selectedGroup && msgGroupId === selectedGroupId;
 
           if (isCurrentGroup) {
             set({ messages: [...get().messages, msg] });
           } else {
+            // ✅ FIX: use normalized groupId string as key
             set({
               unreadCounts: {
                 ...unreadCounts,
-                [msg.groupId]: (unreadCounts[msg.groupId] || 0) + 1,
+                [msgGroupId]: (unreadCounts[msgGroupId] || 0) + 1,
               },
             });
 
-            const group = groups.find((g) => g._id === msg.groupId);
+            // skip toast for call messages
+            if (msg.messageType === "call") return;
+
+            const group = groups.find((g) => g._id.toString() === msgGroupId);
             const groupName = group?.name || "Group";
             const preview = msg.file
               ? `📎 ${msg.fileName || "File"}`
@@ -313,22 +331,21 @@ export const useChatStore = create(
     }),
     {
       name: "chat-store",
-      // ✅ FIX: never persist chats/groups/messages — always fetch fresh from server
       partialize: (state) => ({
         activeTab: state.activeTab,
         isSoundEnabled: state.isSoundEnabled,
+        // ✅ persist unreadCounts so badge survives refresh
         unreadCounts: state.unreadCounts,
-        // chats, groups, messages intentionally excluded
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // ✅ FIX: always reset these to empty on page load
           state.hasHydrated = true;
           state.chats = [];
           state.groups = [];
           state.messages = [];
           state.allContacts = [];
           state.isUsersLoading = false;
+          state.isChatsReady = false;
         }
       },
     }

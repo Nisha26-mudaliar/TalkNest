@@ -20,23 +20,25 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    // ✅ NEW: bio field
+    bio: {
+      type: String,
+      default: "",
+      maxlength: 80,
+    },
     isVerified: {
-  type: Boolean,
-  default: false,
+      type: Boolean,
+      default: false,
     },
-
-  verificationToken: {
-  type: String,
+    verificationToken: {
+      type: String,
     },
-
-  verificationTokenExpires: {
-  type: Date,
+    verificationTokenExpires: {
+      type: Date,
     },
-    
   },
-  { timestamps: true } // createdAt & updatedAt
+  { timestamps: true }
 );
 
 const User = mongoose.model("User", userSchema);
-
 export default User;

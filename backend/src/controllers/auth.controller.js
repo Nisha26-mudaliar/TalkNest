@@ -33,13 +33,11 @@ export const signup = async (req, res) => {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    // ✅ Generate 6-digit OTP (works on any device, no URL needed)
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // If user exists but unverified, update their OTP
     if (existingUser && !existingUser.isVerified) {
       existingUser.password = hashedPassword;
       existingUser.fullName = fullName;
@@ -60,12 +58,11 @@ export const signup = async (req, res) => {
       password: hashedPassword,
       isVerified: false,
       verificationToken: otp,
-      verificationTokenExpires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+      verificationTokenExpires: Date.now() + 24 * 60 * 60 * 1000,
     });
 
     await newUser.save();
 
-    // ✅ Send OTP via email (no URL, works everywhere)
     try {
       await sendWelcomeEmail(newUser.email, newUser.fullName, otp);
     } catch (error) {
@@ -87,7 +84,7 @@ export const signup = async (req, res) => {
 =========================== */
 export const verifyEmail = async (req, res) => {
   try {
-    const { otp } = req.body; // ✅ from request body, not URL
+    const { otp } = req.body;
 
     if (!otp) {
       return res.status(400).json({ message: "OTP is required" });
@@ -175,7 +172,6 @@ export const login = async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
 
-    // 🚫 Block unverified users
     if (!user.isVerified) {
       return res.status(401).json({
         message: "Please verify your email before logging in.",
@@ -195,6 +191,7 @@ export const login = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       profilePic: user.profilePic,
+      bio: user.bio, // ✅ include bio in login response
     });
 
   } catch (error) {
@@ -216,20 +213,30 @@ export const logout = (_, res) => {
 =========================== */
 export const updateProfile = async (req, res) => {
   try {
-    const { profilePic } = req.body;
-    if (!profilePic) {
-      return res.status(400).json({
-        message: "Profile pic is required",
-      });
-    }
-
+    const { profilePic, bio } = req.body; // ✅ accept both profilePic and bio
     const userId = req.user._id;
 
-    const uploadResponse = await cloudinary.uploader.upload(profilePic);
+    // Build update object dynamically
+    const updates = {};
+
+    // ✅ Handle profilePic update
+    if (profilePic) {
+      const uploadResponse = await cloudinary.uploader.upload(profilePic);
+      updates.profilePic = uploadResponse.secure_url;
+    }
+
+    // ✅ Handle bio update
+    if (bio !== undefined) {
+      updates.bio = bio.trim().slice(0, 80); // enforce max length server-side too
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "Nothing to update" });
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { profilePic: uploadResponse.secure_url },
+      updates,
       { new: true }
     );
 
@@ -237,6 +244,19 @@ export const updateProfile = async (req, res) => {
 
   } catch (error) {
     console.log("Error in update profile:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/* ===========================
+   CHECK AUTH
+=========================== */
+export const checkAuth = async (req, res) => {
+  try {
+    // ✅ Return full user including bio
+    res.status(200).json(req.user);
+  } catch (error) {
+    console.log("Error in checkAuth controller:", error);
     res.status(500).json({ message: "Internal server error" });
   }
 };
