@@ -84,7 +84,15 @@ io.on("connection", async (socket) => {
 
   socket.on("sendGroupMessage", async (data) => {
     try {
+      let imageUrl; // ✅ FIX 1: added imageUrl
       let fileUrl;
+
+      // ✅ FIX 1: Upload image to Cloudinary if present
+      if (data.image) {
+        const uploadResponse = await cloudinary.uploader.upload(data.image);
+        imageUrl = uploadResponse.secure_url;
+      }
+
       if (data.file) {
         const uploadResponse = await cloudinary.uploader.upload(data.file, {
           resource_type: "raw",
@@ -97,6 +105,7 @@ io.on("connection", async (socket) => {
         groupId: new mongoose.Types.ObjectId(data.groupId),
         senderId: userId,
         text: data.text,
+        image: imageUrl, // ✅ FIX 1: save image
         file: fileUrl,
         fileName: data.fileName,
         fileType: data.fileType,
@@ -108,6 +117,7 @@ io.on("connection", async (socket) => {
         senderPic: socket.user.profilePic,
       };
 
+      // ✅ FIX 2: emit to ALL in room including sender (so sender sees message instantly)
       io.to(data.groupId).emit("receiveGroupMessage", message);
     } catch (error) {
       console.log("sendGroupMessage error:", error);

@@ -30,16 +30,37 @@ export const useVideoCallStore = create((set, get) => ({
     ],
   },
 
+  // ========== HELPER: Get media stream with fallbacks ==========
+  getMediaStream: async () => {
+    // 1. Try video + audio
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    } catch (err) {
+      console.warn("Camera + mic denied or unavailable, trying audio only:", err);
+    }
+
+    // 2. Try audio only
+    try {
+      const audioStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+      // Mark camera as off since we couldn't get it
+      set({ isCameraOn: false });
+      return audioStream;
+    } catch (err) {
+      console.warn("Audio also denied or unavailable, using empty stream:", err);
+    }
+
+    // 3. Fallback: silent empty stream so the call still connects
+    set({ isCameraOn: false, isMicOn: false });
+    return new MediaStream();
+  },
+
   // ========== START CALL (Caller side) ==========
   startCall: async (receiverUser) => {
     const socket = useAuthStore.getState().socket;
     const authUser = useAuthStore.getState().authUser;
 
-    // Get local camera + mic
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
+    // Get local camera + mic (with graceful fallback)
+    const stream = await get().getMediaStream();
 
     const pc = new RTCPeerConnection(get().iceServers);
 
@@ -90,10 +111,8 @@ export const useVideoCallStore = create((set, get) => ({
     const socket = useAuthStore.getState().socket;
     const { caller, incomingOffer } = get();
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
-    });
+    // Get local camera + mic (with graceful fallback)
+    const stream = await get().getMediaStream();
 
     const pc = new RTCPeerConnection(get().iceServers);
 

@@ -34,12 +34,8 @@ function CreateGroupModal({ onClose }) {
         members: selectedMembers,
       });
 
-      // ✅ Refresh the groups list in the sidebar
       await getMyGroups();
-
-      // ✅ Open the newly created group chat immediately
       setSelectedGroup(res.data);
-
       onClose();
     } catch (error) {
       console.log(error);
@@ -48,11 +44,11 @@ function CreateGroupModal({ onClose }) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center"
+      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
       onClick={onClose}
     >
       <div
-        className="bg-slate-900 p-6 rounded-xl w-96 relative"
+        className="bg-slate-900 p-6 rounded-xl w-96 relative z-50"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -81,6 +77,7 @@ function CreateGroupModal({ onClose }) {
               <input
                 type="checkbox"
                 onChange={() => toggleMember(user._id)}
+                className="w-4 h-4 accent-cyan-500 cursor-pointer"
               />
               <span className="text-slate-200">{user.fullName}</span>
             </div>

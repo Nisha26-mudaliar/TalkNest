@@ -208,14 +208,21 @@ export const getChatPartners = async (req, res) => {
   }
 };
 
-// ⭐ Send group message via HTTP
+// ⭐ Send group message via HTTP — FIXED: image upload + populated socket emit
 export const sendGroupMessage = async (req, res) => {
   try {
-    const { text, file, fileName, fileType } = req.body;
+    const { text, image, file, fileName, fileType } = req.body; // ✅ FIX 1: added image
     const { groupId } = req.params;
     const senderId = req.user._id;
 
+    let imageUrl; // ✅ FIX 1: added imageUrl
     let fileUrl;
+
+    // ✅ FIX 1: Upload image to Cloudinary if present
+    if (image) {
+      const uploadResponse = await cloudinary.uploader.upload(image);
+      imageUrl = uploadResponse.secure_url;
+    }
 
     // ✅ Upload file to Cloudinary if present
     if (file) {
@@ -230,15 +237,29 @@ export const sendGroupMessage = async (req, res) => {
       senderId,
       groupId,
       text,
+      image: imageUrl, // ✅ FIX 1: save image URL
       file: fileUrl,
       fileName,
       fileType,
     });
 
     await newMessage.save();
-    io.to(groupId).emit("newGroupMessage", newMessage);
-    res.status(201).json(newMessage);
+
+    // ✅ FIX 2: Populate sender before emitting so real-time message has senderName
+    const populated = await Message.findById(newMessage._id)
+      .populate("senderId", "fullName profilePic");
+
+    const messageToEmit = {
+      ...populated._doc,
+      senderName: populated.senderId?.fullName,
+      senderPic: populated.senderId?.profilePic,
+      senderId: populated.senderId?._id,
+    };
+
+    io.to(groupId).emit("newGroupMessage", messageToEmit); // ✅ FIX 2: emit populated message
+    res.status(201).json(messageToEmit); // ✅ consistent shape for HTTP response too
   } catch (error) {
+    console.log("Error in sendGroupMessage:", error);
     res.status(500).json({ message: "Server error" });
   }
 };

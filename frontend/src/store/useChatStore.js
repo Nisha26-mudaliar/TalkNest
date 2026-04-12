@@ -28,9 +28,13 @@ export const useChatStore = create(
 
       setActiveTab: (tab) => set({ activeTab: tab }),
 
+      // ✅ FIX: null-safe setSelectedUser
       setSelectedUser: (user) => {
+        if (!user) {
+          set({ selectedUser: null, selectedGroup: null, messages: [] });
+          return;
+        }
         const unreadCounts = { ...get().unreadCounts };
-        // ✅ FIX: always use toString() so key matches what newMessage.senderId produces
         delete unreadCounts[user._id.toString()];
         set({
           selectedUser: { ...user },
@@ -40,9 +44,13 @@ export const useChatStore = create(
         });
       },
 
+      // ✅ FIX: null-safe setSelectedGroup
       setSelectedGroup: (group) => {
+        if (!group) {
+          set({ selectedGroup: null, selectedUser: null, messages: [] });
+          return;
+        }
         const unreadCounts = { ...get().unreadCounts };
-        // ✅ FIX: always use toString()
         delete unreadCounts[group._id.toString()];
         set({
           selectedGroup: { ...group },
@@ -156,12 +164,10 @@ export const useChatStore = create(
             socket.emit("sendGroupMessage", {
               groupId: selectedGroup._id,
               text: messageData.text,
+              image: messageData.image,
               file: messageData.file,
               fileName: messageData.fileName,
               fileType: messageData.fileType,
-            });
-            set({
-              messages: get().messages.filter((m) => m._id !== tempId),
             });
           }
         } catch (error) {
@@ -213,7 +219,6 @@ export const useChatStore = create(
         socket.on("newMessage", (newMessage) => {
           const { selectedUser, isSoundEnabled, unreadCounts, chats } = get();
 
-          // ✅ FIX: normalize both sides to string before comparing
           const senderId = newMessage.senderId?.toString();
           const selectedUserId = selectedUser?._id?.toString();
           const isCurrentChat = selectedUser && senderId === selectedUserId;
@@ -221,7 +226,6 @@ export const useChatStore = create(
           if (isCurrentChat) {
             set({ messages: [...get().messages, newMessage] });
           } else {
-            // ✅ FIX: use normalized senderId string as key
             set({
               unreadCounts: {
                 ...unreadCounts,
@@ -229,7 +233,6 @@ export const useChatStore = create(
               },
             });
 
-            // skip toast for call messages
             if (newMessage.messageType === "call") return;
 
             const sender = chats.find((c) => c._id.toString() === senderId);
@@ -258,23 +261,32 @@ export const useChatStore = create(
         });
 
         socket.on("receiveGroupMessage", (msg) => {
-          const { selectedGroup, isSoundEnabled, unreadCounts, groups } = get();
+          const { selectedGroup, isSoundEnabled, unreadCounts, groups, messages } = get();
           const { authUser } = useAuthStore.getState();
 
-          // ✅ FIX: normalize to string
           const senderId = msg.senderId?.toString();
           const authUserId = authUser._id?.toString();
-          if (senderId === authUserId) return;
-
-          // ✅ FIX: normalize groupId to string for comparison
           const msgGroupId = msg.groupId?.toString();
           const selectedGroupId = selectedGroup?._id?.toString();
           const isCurrentGroup = selectedGroup && msgGroupId === selectedGroupId;
 
           if (isCurrentGroup) {
-            set({ messages: [...get().messages, msg] });
+            const hasTempMessage = messages.some(
+              (m) => m.isOptimistic && senderId === authUserId
+            );
+            if (hasTempMessage && senderId === authUserId) {
+              set({
+                messages: [
+                  ...messages.filter((m) => !m.isOptimistic),
+                  msg,
+                ],
+              });
+            } else {
+              set({ messages: [...get().messages, msg] });
+            }
           } else {
-            // ✅ FIX: use normalized groupId string as key
+            if (senderId === authUserId) return;
+
             set({
               unreadCounts: {
                 ...unreadCounts,
@@ -282,12 +294,13 @@ export const useChatStore = create(
               },
             });
 
-            // skip toast for call messages
             if (msg.messageType === "call") return;
 
             const group = groups.find((g) => g._id.toString() === msgGroupId);
             const groupName = group?.name || "Group";
-            const preview = msg.file
+            const preview = msg.image
+              ? "📷 Photo"
+              : msg.file
               ? `📎 ${msg.fileName || "File"}`
               : msg.text || "New message";
 
@@ -303,7 +316,7 @@ export const useChatStore = create(
             });
           }
 
-          if (isSoundEnabled) {
+          if (isSoundEnabled && senderId !== authUserId) {
             new Audio("/sounds/notification.mp3").play().catch(() => {});
           }
         });
@@ -334,7 +347,6 @@ export const useChatStore = create(
       partialize: (state) => ({
         activeTab: state.activeTab,
         isSoundEnabled: state.isSoundEnabled,
-        // ✅ persist unreadCounts so badge survives refresh
         unreadCounts: state.unreadCounts,
       }),
       onRehydrateStorage: () => (state) => {

@@ -42,3 +42,7 @@
   @apply px-4 py-2 inline-block bg-primary/10 rounded-lg text-primary
   hover:opacity-80 text-sm transition-colors;
 }
+
+.avatar.offline::before {
+  background-color: #ffffff !important;
+}
